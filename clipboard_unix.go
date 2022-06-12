@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build freebsd || linux || netbsd || openbsd || solaris || dragonfly
 // +build freebsd linux netbsd openbsd solaris dragonfly
 
 package clipboard
@@ -15,6 +16,8 @@ import (
 const (
 	xsel               = "xsel"
 	xclip              = "xclip"
+	powershell         = "powershell.exe"
+	winclip            = "clip.exe"
 	wlcopy             = "wl-copy"
 	wlpaste            = "wl-paste"
 	termuxClipboardGet = "termux-clipboard-get"
@@ -24,6 +27,8 @@ const (
 var (
 	pasteCmdArgs map[string][]string
 	copyCmdArgs  map[string][]string
+
+	trimDos bool
 
 	xselPasteArgs = map[string][]string{
 		"primary":   []string{xsel, "--output"},
@@ -59,6 +64,15 @@ var (
 	termuxCopyArgs = map[string][]string{
 		"primary":   []string{termuxClipboardSet},
 		"clipboard": []string{termuxClipboardSet},
+	}
+
+	powershellPasteArgs = map[string][]string{
+		"primary":   []string{powershell, "Get-Clipboard"},
+		"clipboard": []string{powershell, "Get-Clipboard"},
+	}
+	winclipCopyArgs = map[string][]string{
+		"primary":   []string{winclip},
+		"clipboard": []string{winclip},
 	}
 
 	missingCommands = errors.New("No clipboard utilities available. Please install xsel, xclip, wl-clipboard or Termux:API add-on for termux-clipboard-get/set.")
@@ -138,6 +152,16 @@ func initialize() error {
 		}
 	}
 
+	pasteCmdArgs = powershellPasteArgs
+	copyCmdArgs = winclipCopyArgs
+
+	if _, err := exec.LookPath(winclip); err == nil {
+		if _, err := exec.LookPath(powershell); err == nil {
+			trimDos = true
+			return nil
+		}
+	}
+
 	if internalClipboards == nil {
 		internalClipboards = make(map[string]string)
 	}
@@ -166,7 +190,11 @@ func readAll(register string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	result := string(out)
+	if trimDos && len(result) > 1 {
+		result = result[:len(result)-2]
+	}
+	return result, nil
 }
 
 func writeAll(text, register string) error {
